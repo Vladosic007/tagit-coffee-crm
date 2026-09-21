@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tagit-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tagit_crm
+      POSTGRES_USER: tagit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tagit-change-me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./ops/backup:/backup
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tagit -d tagit_crm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tagit-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tagit:${POSTGRES_PASSWORD:-tagit-change-me}@postgres:5432/tagit_crm
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod}
+      PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+    container_name: tagit-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres_data:
