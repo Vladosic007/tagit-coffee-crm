@@ -1,84 +1,75 @@
-# TAGIT Coffee CRM
+# TAGIT Coffee CRM (Next.js на Vercel)
 
-Касса и учётная система для одной кофейни на планшете 1280×800 (альбомная).
-Роли: **Бариста** (смена, продажи, касса) и **Владелец** (отчёты, меню, сотрудники).
-Вход по 4-значному PIN.
+Касса и учётная система для одной кофейни на планшете 1280×800. Роли: Бариста / Владелец, вход по 4-значному PIN.
 
-## Что внутри
+Стек:
+- **Next.js 14 (App Router)** — фронт + API-роуты в одном приложении
+- **Prisma + PostgreSQL** (Neon для Vercel)
+- **Zustand + Tailwind + Recharts + qrcode.react**
+- **JOSE JWT + bcryptjs** для авторизации
 
-- `frontend/` — React + Vite + TypeScript + Tailwind, PWA-ready
-- `backend/` — Node.js + Fastify + Prisma + JWT + bcrypt
-- `docker-compose.yml` — Postgres + backend + frontend в трёх контейнерах
-- `дизайн/` — исходный HTML-макет с 13 экранами
-- `CRM для кофейни — ТЗ, база и промты (TAGIT).docx` — техническое задание
-
-## Локальный запуск (без Docker)
-
-Одноразовая настройка:
+## Локальный запуск
 
 ```bash
-cd frontend && npm install
-cd ../backend && npm install
-cd backend && npm run setup   # prisma generate + migrate + seed
+npm install
 ```
 
-Запуск в двух терминалах:
+Создать `.env` в корне (шаблон в `.env.example`):
+```
+DATABASE_URL="postgresql://user:pass@ep-xxx.eu-central-1.aws.neon.tech/tagit_crm?sslmode=require"
+JWT_SECRET="случайная-длинная-строка-32+"
+```
 
+Применить миграции и залить демо-данные:
 ```bash
-# терминал 1 — бэк на :3001
-cd backend && npm run dev
-
-# терминал 2 — фронт на :3000
-cd frontend && npm run dev
+npx prisma migrate deploy
+npx tsx prisma/seed.ts
 ```
 
-Открыть http://localhost:3000. Демо-PIN'ы: **1234** владелец, **5678** Аня, **2222** Максим.
-
-## База данных
-
-В `backend/prisma/schema.prisma` по умолчанию SQLite (файл `backend/prisma/dev.db`) — удобно для локальной разработки без установки Postgres. Для продакшна в Docker Compose схема автоматически переключается на PostgreSQL (см. `backend/Dockerfile`).
-
-## Продакшн деплой (Docker Compose)
-
-1. Установите Docker и Docker Compose на сервер.
-2. Скопируйте `.env.example` в `.env` и заполните:
-   - `POSTGRES_PASSWORD` — сильный пароль
-   - `JWT_SECRET` — случайная строка от 32 символов
-   - `CORS_ORIGIN` — публичный URL фронта (например `https://kassa.вашдомен`)
-   - `VITE_API_URL` — публичный URL API (например `https://api.вашдомен`)
-3. Запустите:
-
+Запустить:
 ```bash
-docker compose up -d --build
+npm run dev   # http://localhost:3000
 ```
 
-Фронт доступен на `:8080`, API — на `:3001`. Первый запуск сам создаст миграции и заполнит демо-меню.
+Демо-PIN'ы после seed: **1234** владелец, **5678** Аня, **2222** Максим.
 
-### Nginx + HTTPS (reg.cloud)
+## Деплой на Vercel
 
-Поверх контейнеров ставится системный Nginx с сертификатом Let's Encrypt как reverse-proxy на `:8080` и `:3001`. Пример упрощённого конфига есть в `ops/nginx.example.conf` (создать при деплое).
+1. **Neon Postgres** — создать проект в [neon.tech](https://neon.tech), скопировать connection string.
+2. **Vercel** — импортировать репо, задать env-переменные:
+   - `DATABASE_URL` — Neon connection string
+   - `JWT_SECRET` — случайная строка ≥ 32 символов
+3. **Prisma migrate** — либо через Vercel CLI один раз (`vercel env pull .env && npx prisma migrate deploy`), либо build-hook. Первый seed сделать вручную: `npx tsx prisma/seed.ts`.
+4. Готово: `https://<project>.vercel.app`.
 
-### Резервные копии
+## Структура
 
-Ежедневно по cron:
-
-```cron
-0 3 * * * docker exec tagit-postgres pg_dump -U tagit tagit_crm | gzip > /var/backup/tagit-$(date +\%F).sql.gz
+```
+app/
+├─ (клиентские страницы)
+│  ├─ login/       — вход по PIN
+│  ├─ page.tsx     — главный экран баристы
+│  ├─ order/       — каталог и корзина
+│  ├─ payment/     — оплата (нал/перевод) со скидкой
+│  ├─ success/[id] — успех + квитанция
+│  ├─ shift/       — открытие/закрытие смены
+│  ├─ cash-movement — инкассация/внесение
+│  └─ owner/       — кабинет владельца (отчёт + периоды, смены, меню, сотрудники)
+└─ api/            — все ручки (auth, menu, shifts, orders, cash-movements, reports/{day,period}, products, categories, employees, settings/brand)
+components/        — UI + layout (Protected, AppBootstrap)
+lib/               — prisma, auth, types, format, report, shiftStats
+lib/client/        — client fetch + services
+stores/            — Zustand стор (persist в localStorage)
+prisma/            — schema + миграции + seed
 ```
 
-## Стек
+## Что умеет
 
-| Слой | Технология |
+| Роль | Возможности |
 |---|---|
-| Фронт | React 18, TypeScript, Vite, Tailwind, Zustand, React Router, Recharts, qrcode.react |
-| Бэк | Node 20, Fastify 4, Prisma 5, bcryptjs, Zod |
-| БД | SQLite (dev) / PostgreSQL 16 (prod) |
-| Обёртка | Docker Compose, Nginx |
-
-## Дизайн-токены
-
-Кремовый фон `#F7F3EE`, кофейно-коричневый акцент `#6F4E37`, тёмно-коричневый текст `#2B2018`, успех `#3E7C5A`, ошибка `#C0492F`. Шрифт Inter, радиус 12px, минимальная тач-цель 64px. Всё — из ТЗ, раздел 12.
+| Бариста | Открыть/закрыть смену, продажи, скидка 0-100% на каждую позицию, инкассация/внесение, квитанция с QR |
+| Владелец | Всё выше + отчёты за день/неделю/месяц/год/свой период, журнал смен, редактор меню и модификаторов, управление сотрудниками |
 
 ## Правовая оговорка
 
-Квитанция не является фискальным чеком по 54-ФЗ. Для реальной работы в РФ потребуется интеграция с онлайн-кассой — заложено в дорожную карту после MVP.
+Квитанция — не фискальный чек 54-ФЗ. Для реальных продаж в РФ нужна интеграция с онлайн-кассой.

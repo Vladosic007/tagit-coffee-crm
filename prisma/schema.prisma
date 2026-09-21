@@ -1,0 +1,133 @@
+// TAGIT Coffee CRM — Prisma schema
+// 7 tables из ТЗ раздел 7. SQLite для локальной разработки;
+// для Postgres в проде поменять provider на "postgresql" и обновить DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id             String   @id @default(cuid())
+  name           String
+  role           String // "barista" | "owner"
+  pinHash        String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  openedShifts   Shift[]  @relation("ShiftOpenedBy")
+  closedShifts   Shift[]  @relation("ShiftClosedBy")
+  orders         Order[]
+  cashMovements  CashMovement[]
+
+  @@index([isActive])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  products  Product[]
+}
+
+model Product {
+  id                String   @id @default(cuid())
+  categoryId        String
+  category          Category @relation(fields: [categoryId], references: [id])
+  name              String
+  basePrice         Int
+  emoji             String?
+  // JSON string; parsed to object in service layer:
+  //   ["mg-size","mg-milk","mg-syrup"] and modifier groups defined in ModifierGroup table
+  modifierGroupIds  String   @default("[]")
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  orderItems        OrderItem[]
+
+  @@index([categoryId, isActive])
+}
+
+// Global modifier groups (size, milk, syrup) with their options.
+// options is a JSON array: [{id,name,priceDelta,isDefault?}]
+model ModifierGroup {
+  id       String @id @default(cuid())
+  name     String
+  type     String // "size" | "milk" | "syrup" | "extra"
+  required Boolean @default(true)
+  multi    Boolean @default(false)
+  options  String // JSON string
+}
+
+model Shift {
+  id            String    @id @default(cuid())
+  openedById    String
+  openedBy      Employee  @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedById    String?
+  closedBy      Employee? @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  cashStart     Int
+  cashCounted   Int?
+  status        String    @default("open") // "open" | "closed"
+  orders        Order[]
+  cashMovements CashMovement[]
+
+  @@index([status])
+  @@index([openedAt])
+}
+
+model Order {
+  id             String     @id @default(cuid())
+  receiptNo      Int        @unique
+  shiftId        String
+  shift          Shift      @relation(fields: [shiftId], references: [id])
+  employeeId     String
+  employee       Employee   @relation(fields: [employeeId], references: [id])
+  total          Int
+  paymentMethod  String // "cash" | "transfer"
+  cashReceived   Int?
+  change         Int?
+  createdAt      DateTime   @default(now())
+  items          OrderItem[]
+
+  @@index([shiftId])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id])
+  productName    String // snapshot
+  unitPrice      Int    // snapshot (базовая + модификаторы)
+  qty            Int
+  modifiers      String @default("[]") // JSON: [{groupName, optionName, priceDelta}]
+  discount       Int    @default(0) // 0-100 (%)
+  lineTotal      Int    // (unitPrice - unitPrice * discount / 100) * qty, округл.
+}
+
+model CashMovement {
+  id         String   @id @default(cuid())
+  shiftId    String
+  shift      Shift    @relation(fields: [shiftId], references: [id])
+  type       String // "collection" | "deposit"
+  amount     Int
+  comment    String   @default("")
+  createdAt  DateTime @default(now())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([shiftId])
+}
+
+// Simple key/value settings (brand name, transfer requisites, etc.)
+model Setting {
+  key   String @id
+  value String
+}

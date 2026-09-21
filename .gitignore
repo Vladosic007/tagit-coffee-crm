@@ -2,12 +2,16 @@ node_modules/
 dist/
 dist-ssr/
 dist-types/
+.next/
+out/
+next-env.d.ts
 *.local
 .env
 .env.local
 .env.*.local
 .DS_Store
 *.log
+*.tsbuildinfo
 
 # Prisma dev DB
 backend/prisma/dev.db
