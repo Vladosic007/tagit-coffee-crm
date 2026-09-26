@@ -155,7 +155,7 @@ function _InnerPage() {
                   {brand.transferPhone}
                 </div>
                 <div className="mt-1 text-muted">
-                  {brand.transferHolder} · {brand.transferBank}
+                  {[brand.transferHolder, brand.transferBank].filter(Boolean).join(' · ')}
                 </div>
               </div>
               <div className="w-full max-w-md border border-line rounded-2xl p-5 flex items-center justify-between">

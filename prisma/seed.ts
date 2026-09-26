@@ -89,16 +89,15 @@ async function main() {
   // === Categories ===
   const categories = [
     { id: 'c-milk', name: 'Молочные', sortOrder: 1 },
-    { id: 'c-taro', name: 'Таро', sortOrder: 2 },
-    { id: 'c-sweet', name: 'Послаще', sortOrder: 3 },
-    { id: 'c-sour', name: 'Покислее', sortOrder: 4 },
-    { id: 'c-tart', name: 'С кислинкой', sortOrder: 5 },
-    { id: 'c-matcha', name: 'Бабл-Матча', sortOrder: 6 },
-    { id: 'c-lim', name: 'Бабл-лим', sortOrder: 7 },
-    { id: 'c-babl-coffee', name: 'Бабл-кофе', sortOrder: 8 },
-    { id: 'c-tea', name: 'Чаи', sortOrder: 9 },
-    { id: 'c-coffee', name: 'Кофе', sortOrder: 10 },
-    { id: 'c-cacao', name: 'Какао', sortOrder: 11 },
+    { id: 'c-sweet', name: 'Послаще', sortOrder: 2 },
+    { id: 'c-sour', name: 'Покислее', sortOrder: 3 },
+    { id: 'c-tart', name: 'С кислинкой', sortOrder: 4 },
+    { id: 'c-matcha', name: 'Бабл-Матча', sortOrder: 5 },
+    { id: 'c-lim', name: 'Бабл-лим', sortOrder: 6 },
+    { id: 'c-babl-coffee', name: 'Бабл-кофе', sortOrder: 7 },
+    { id: 'c-tea', name: 'Чаи', sortOrder: 8 },
+    { id: 'c-coffee', name: 'Кофе', sortOrder: 9 },
+    { id: 'c-cacao', name: 'Какао', sortOrder: 10 },
   ];
   for (const c of categories) {
     await prisma.category.create({
@@ -125,10 +124,8 @@ async function main() {
     { id: 'p-mblue', categoryId: 'c-milk', name: 'Молочная черника', basePrice: 320, emoji: '🫐', mods: BUBBLE },
     { id: 'p-gran', categoryId: 'c-milk', name: 'Гранат-кокос', basePrice: 330, emoji: '🥥', mods: BUBBLE },
     { id: 'p-chstr', categoryId: 'c-milk', name: 'Чоко-клубника', basePrice: 330, emoji: '🍓', mods: BUBBLE },
-
-    // Таро
-    { id: 'p-moon', categoryId: 'c-taro', name: 'Тень луны', basePrice: 330, emoji: '🌙', mods: BUBBLE },
-    { id: 'p-milkti', categoryId: 'c-taro', name: 'Бабл милк-ти', basePrice: 280, emoji: '🧋', mods: BUBBLE },
+    { id: 'p-moon', categoryId: 'c-milk', name: 'Таро тень луны', basePrice: 330, emoji: '🌙', mods: BUBBLE },
+    { id: 'p-milkti', categoryId: 'c-milk', name: 'Бабл милк-ти', basePrice: 280, emoji: '🧋', mods: BUBBLE },
 
     // Послаще
     { id: 'p-jstr', categoryId: 'c-sweet', name: 'Жасминовая клубника', basePrice: 310, emoji: '🍓', mods: BUBBLE },
@@ -220,19 +217,30 @@ async function main() {
     });
   }
 
-  // === Brand settings (upsert, не трогаем если уже настроено) ===
-  const settings = [
-    { key: 'brand.name', value: 'TAGIT Coffee' },
-    { key: 'brand.logoEmoji', value: '☕' },
-    { key: 'brand.transferPhone', value: '+7 900 000-00-00' },
-    { key: 'brand.transferHolder', value: 'Иван И.' },
-    { key: 'brand.transferBank', value: 'Сбербанк' },
+  // === Brand settings ===
+  // Реквизиты обновляем принудительно; название и лого — только создаём,
+  // чтобы владелец мог их поменять руками через кабинет позже.
+  const alwaysUpdate = [
+    { key: 'brand.transferPhone', value: '+7 900 275 90 64' },
+    { key: 'brand.transferHolder', value: '' },
+    { key: 'brand.transferBank', value: 'СБП' },
   ];
-  for (const s of settings) {
+  for (const s of alwaysUpdate) {
     await prisma.setting.upsert({
       where: { key: s.key },
       create: s,
-      update: {}, // если уже есть — не перезаписываем (владелец мог настроить)
+      update: { value: s.value },
+    });
+  }
+  const createOnly = [
+    { key: 'brand.name', value: 'TAGIT Coffee' },
+    { key: 'brand.logoEmoji', value: '☕' },
+  ];
+  for (const s of createOnly) {
+    await prisma.setting.upsert({
+      where: { key: s.key },
+      create: s,
+      update: {},
     });
   }
 
