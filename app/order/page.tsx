@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { Protected } from '@/components/layout/Protected';
 import { useRouter } from 'next/navigation';
 import { Trash2, ShoppingBag } from 'lucide-react';
-import { useStore, buildCartLine } from '@/stores/useStore';
+import { useStore, buildCartLine, buildCustomLine } from '@/stores/useStore';
+import { Plus } from 'lucide-react';
 import type { Product, CartLineMod } from '@/lib/types';
 import { TopBar } from '@/components/ui/TopBar';
 import { ProductCard } from '@/components/ui/ProductCard';
@@ -37,6 +38,9 @@ function _InnerPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [discountEditLine, setDiscountEditLine] = useState<string | null>(null);
   const [discountText, setDiscountText] = useState('');
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
 
   const productsInCategory = useMemo(
     () => products.filter((p) => p.categoryId === activeCat && p.isActive),
@@ -99,6 +103,14 @@ function _InnerPage() {
             {productsInCategory.map((p) => (
               <ProductCard key={p.id} product={p} onClick={() => setOpenProduct(p)} />
             ))}
+            <button
+              onClick={() => { setCustomName(''); setCustomPrice(''); setCustomOpen(true); }}
+              className="rounded-2xl border-2 border-dashed border-coffee/40 text-coffee hover:bg-coffee-50 min-h-[120px] flex flex-col items-center justify-center gap-2 font-semibold"
+            >
+              <Plus size={28} />
+              <span>Свободная позиция</span>
+              <span className="text-xs text-muted font-normal">десерт, комбо и т.п.</span>
+            </button>
             {productsInCategory.length === 0 && (
               <div className="col-span-full text-muted text-center py-16">В этой категории пока пусто</div>
             )}
@@ -217,6 +229,56 @@ function _InnerPage() {
         />
       </Modal>
 
+      <Modal
+        open={customOpen}
+        onClose={() => setCustomOpen(false)}
+        title="Свободная позиция"
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <Button block variant="secondary" onClick={() => setCustomOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              block
+              disabled={!customName.trim() || !customPrice || Number(customPrice) <= 0}
+              onClick={() => {
+                addToCart(buildCustomLine(customName, Number(customPrice), 1));
+                setCustomOpen(false);
+              }}
+            >
+              Добавить в корзину
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <div className="text-xs text-muted mb-1">Название (что продаём)</div>
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="Чизкейк, круассан, авторский десерт..."
+              className="w-full h-14 rounded-xl border border-line px-4 focus:border-coffee"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-muted mb-1">Цена, ₽</div>
+            <input
+              value={customPrice}
+              onChange={(e) => setCustomPrice(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+              placeholder="200"
+              inputMode="numeric"
+              className="w-full h-16 rounded-xl border border-line px-4 text-3xl font-bold text-center focus:border-coffee tabular-nums"
+            />
+          </div>
+          <div className="text-xs text-muted">
+            Позиция попадёт в чек и отчёт под именем «{customName || 'название'}» с ценой {customPrice || '0'} ₽.
+            В отчёте владельца будет отдельной строкой (не в топе меню, а в разделе «Свободные позиции»).
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={confirmClear} onClose={() => setConfirmClear(false)} title="Очистить корзину?" size="sm">
         <div className="text-muted">Все позиции будут удалены. Отменить нельзя.</div>
         <div className="flex gap-3 mt-6">
@@ -251,30 +313,52 @@ function ProductModifierModal({
   onAdd: (qty: number, mods: CartLineMod[], discount: number) => void;
 }) {
   const groups = (allGroups as any[]).filter((g) => product.modifierGroupIds.includes(g.id));
-  const initial: Record<string, string> = {};
+  const initialSingle: Record<string, string> = {};
+  const initialMulti: Record<string, string[]> = {};
   groups.forEach((g) => {
-    const def = g.options.find((o: any) => o.isDefault) || g.options[0];
-    if (def) initial[g.id] = def.id;
+    if (g.multi) {
+      initialMulti[g.id] = g.options.filter((o: any) => o.isDefault).map((o: any) => o.id);
+    } else {
+      const def = g.options.find((o: any) => o.isDefault) || g.options[0];
+      if (def) initialSingle[g.id] = def.id;
+    }
   });
-  const [chosen, setChosen] = useState<Record<string, string>>(initial);
+  const [chosen, setChosen] = useState<Record<string, string>>(initialSingle);
+  const [multiChosen, setMultiChosen] = useState<Record<string, string[]>>(initialMulti);
   const [qty, setQty] = useState(1);
   const [discount, setDiscount] = useState(0);
   const [discountText, setDiscountText] = useState('');
 
-  const mods: CartLineMod[] = groups
-    .map((g) => {
+  const mods: CartLineMod[] = [];
+  for (const g of groups) {
+    if (g.multi) {
+      const selected = multiChosen[g.id] || [];
+      for (const optId of selected) {
+        const opt = g.options.find((o: any) => o.id === optId);
+        if (opt) {
+          mods.push({
+            groupId: g.id,
+            groupName: g.name,
+            optionId: opt.id,
+            optionName: opt.name,
+            priceDelta: opt.priceDelta,
+          });
+        }
+      }
+    } else {
       const optId = chosen[g.id];
       const opt = g.options.find((o: any) => o.id === optId);
-      if (!opt) return null;
-      return {
-        groupId: g.id,
-        groupName: g.name,
-        optionId: opt.id,
-        optionName: opt.name,
-        priceDelta: opt.priceDelta,
-      };
-    })
-    .filter(Boolean) as CartLineMod[];
+      if (opt) {
+        mods.push({
+          groupId: g.id,
+          groupName: g.name,
+          optionId: opt.id,
+          optionName: opt.name,
+          priceDelta: opt.priceDelta,
+        });
+      }
+    }
+  }
 
   const unit = product.basePrice + mods.reduce((s, m) => s + m.priceDelta, 0);
   const discountedUnit = Math.round((unit * (100 - discount)) / 100);
@@ -366,14 +450,28 @@ function ProductModifierModal({
             <div className="text-sm font-semibold text-ink mb-2">
               {g.name}
               {!g.required && <span className="text-muted font-normal ml-1">(опционально)</span>}
+              {g.multi && <span className="text-muted font-normal ml-1">— можно несколько</span>}
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
               {g.options.map((o: any) => {
-                const active = chosen[g.id] === o.id;
+                const active = g.multi
+                  ? (multiChosen[g.id] || []).includes(o.id)
+                  : chosen[g.id] === o.id;
                 return (
                   <button
                     key={o.id}
-                    onClick={() => setChosen({ ...chosen, [g.id]: o.id })}
+                    onClick={() => {
+                      if (g.multi) {
+                        setMultiChosen((prev) => {
+                          const cur = new Set(prev[g.id] || []);
+                          if (cur.has(o.id)) cur.delete(o.id);
+                          else cur.add(o.id);
+                          return { ...prev, [g.id]: Array.from(cur) };
+                        });
+                      } else {
+                        setChosen({ ...chosen, [g.id]: o.id });
+                      }
+                    }}
                     className={cn(
                       'rounded-xl px-4 py-3 border-2 text-left transition',
                       active
@@ -381,7 +479,15 @@ function ProductModifierModal({
                         : 'border-line bg-white hover:border-coffee-200'
                     )}
                   >
-                    <div className="font-semibold text-ink">{o.name}</div>
+                    <div className="font-semibold text-ink flex items-center gap-2">
+                      {g.multi && (
+                        <span className={cn(
+                          'w-4 h-4 rounded border-2 flex items-center justify-center text-xs shrink-0',
+                          active ? 'bg-coffee border-coffee text-white' : 'border-line'
+                        )}>{active ? '✓' : ''}</span>
+                      )}
+                      <span>{o.name}</span>
+                    </div>
                     <div className="text-xs text-muted">
                       {o.priceDelta === 0 ? 'без доплаты' : `+${moneyPlain(o.priceDelta)}`}
                     </div>

@@ -54,7 +54,7 @@ export interface CartLineMod {
 
 export interface CartLine {
   lineId: string;
-  productId: string;
+  productId: string | null; // null для свободной позиции (десерт)
   productName: string;
   basePrice: number;
   qty: number;
@@ -63,12 +63,13 @@ export interface CartLine {
   discount: number;
   discountedUnit: number;
   lineTotal: number;
+  isCustom?: boolean;
 }
 
 export type PaymentMethod = 'cash' | 'transfer';
 
 export interface OrderItem {
-  productId: string;
+  productId: string | null;
   productName: string;
   unitPrice: number;
   qty: number;

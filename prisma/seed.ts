@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding TAGIT Coffee CRM database...');
 
-  // Employees
+  // === Employees (upsert, сохраняем существующих) ===
   const employees = [
     { name: 'Владелец', role: 'owner', pin: '1234' },
     { name: 'Аня (бариста)', role: 'barista', pin: '5678' },
@@ -21,31 +21,25 @@ async function main() {
     });
   }
 
-  // Modifier groups
+  // === Меню — полный сброс и загрузка заново ===
+  // Мы сначала обнуляем productId у существующих order_items (снимок цены и названия
+  // уже сохранён в самой строке, ссылка на товар нужна только для группировки в отчётах).
+  await prisma.orderItem.updateMany({ data: { productId: null } });
+  await prisma.product.deleteMany();
+  await prisma.category.deleteMany();
+  await prisma.modifierGroup.deleteMany();
+
+  // === Modifier groups ===
   const modifierGroups = [
     {
-      id: 'mg-size',
+      id: 'mg-size-ml',
       name: 'Объём',
       type: 'size',
       required: true,
       multi: false,
       options: [
-        { id: 'sz-s', name: 'S · 250 мл', priceDelta: 0, isDefault: true },
-        { id: 'sz-m', name: 'M · 350 мл', priceDelta: 40 },
-        { id: 'sz-l', name: 'L · 450 мл', priceDelta: 70 },
-      ],
-    },
-    {
-      id: 'mg-milk',
-      name: 'Молоко',
-      type: 'milk',
-      required: true,
-      multi: false,
-      options: [
-        { id: 'ml-reg', name: 'Обычное', priceDelta: 0, isDefault: true },
-        { id: 'ml-oat', name: 'Овсяное', priceDelta: 30 },
-        { id: 'ml-coco', name: 'Кокосовое', priceDelta: 30 },
-        { id: 'ml-lact', name: 'Безлактозное', priceDelta: 30 },
+        { id: 'sz-m', name: 'M', priceDelta: 0, isDefault: true },
+        { id: 'sz-l', name: 'L', priceDelta: 60 },
       ],
     },
     {
@@ -56,17 +50,32 @@ async function main() {
       multi: false,
       options: [
         { id: 'sy-none', name: 'Без сиропа', priceDelta: 0, isDefault: true },
-        { id: 'sy-van', name: 'Ваниль', priceDelta: 20 },
-        { id: 'sy-car', name: 'Карамель', priceDelta: 20 },
-        { id: 'sy-hzl', name: 'Фундук', priceDelta: 20 },
-        { id: 'sy-lav', name: 'Лаванда', priceDelta: 30 },
+        { id: 'sy-van', name: 'Ваниль', priceDelta: 40 },
+        { id: 'sy-car', name: 'Карамель', priceDelta: 40 },
+        { id: 'sy-coc', name: 'Кокос', priceDelta: 40 },
+        { id: 'sy-str', name: 'Клубника', priceDelta: 40 },
+        { id: 'sy-rasp', name: 'Малина', priceDelta: 40 },
+        { id: 'sy-lich', name: 'Личи', priceDelta: 40 },
+        { id: 'sy-peach', name: 'Персик', priceDelta: 40 },
+        { id: 'sy-mango', name: 'Манго', priceDelta: 40 },
+      ],
+    },
+    {
+      id: 'mg-extras',
+      name: 'Добавки',
+      type: 'extra',
+      required: false,
+      multi: true,
+      options: [
+        { id: 'ex-tap', name: 'Тапиока (2 порции)', priceDelta: 80 },
+        { id: 'ex-jel', name: 'Джус-боллы (2 порции)', priceDelta: 80 },
+        { id: 'ex-cheese', name: 'Сырная шапка', priceDelta: 15 },
       ],
     },
   ];
   for (const g of modifierGroups) {
-    await prisma.modifierGroup.upsert({
-      where: { id: g.id },
-      create: {
+    await prisma.modifierGroup.create({
+      data: {
         id: g.id,
         name: g.name,
         type: g.type,
@@ -74,77 +83,144 @@ async function main() {
         multi: g.multi,
         options: JSON.stringify(g.options),
       },
-      update: {
-        name: g.name,
-        options: JSON.stringify(g.options),
-      },
     });
   }
 
-  // Categories
+  // === Categories ===
   const categories = [
-    { id: 'c1', name: 'Эспрессо', sortOrder: 1 },
-    { id: 'c2', name: 'На молоке', sortOrder: 2 },
-    { id: 'c3', name: 'Чай', sortOrder: 3 },
-    { id: 'c4', name: 'Авторские', sortOrder: 4 },
-    { id: 'c5', name: 'Десерты', sortOrder: 5 },
+    { id: 'c-milk', name: 'Молочные', sortOrder: 1 },
+    { id: 'c-taro', name: 'Таро', sortOrder: 2 },
+    { id: 'c-sweet', name: 'Послаще', sortOrder: 3 },
+    { id: 'c-sour', name: 'Покислее', sortOrder: 4 },
+    { id: 'c-tart', name: 'С кислинкой', sortOrder: 5 },
+    { id: 'c-matcha', name: 'Бабл-Матча', sortOrder: 6 },
+    { id: 'c-lim', name: 'Бабл-лим', sortOrder: 7 },
+    { id: 'c-babl-coffee', name: 'Бабл-кофе', sortOrder: 8 },
+    { id: 'c-tea', name: 'Чаи', sortOrder: 9 },
+    { id: 'c-coffee', name: 'Кофе', sortOrder: 10 },
+    { id: 'c-cacao', name: 'Какао', sortOrder: 11 },
   ];
   for (const c of categories) {
-    await prisma.category.upsert({
-      where: { id: c.id },
-      create: { id: c.id, name: c.name, sortOrder: c.sortOrder, isActive: true },
-      update: { name: c.name },
+    await prisma.category.create({
+      data: { id: c.id, name: c.name, sortOrder: c.sortOrder, isActive: true },
     });
   }
 
-  // Products
+  // === Products ===
+  // BUBBLE — categories с M/L + сиропом + добавками
+  const BUBBLE = ['mg-size-ml', 'mg-syrup', 'mg-extras'];
+  // COFFEE — только сироп, без объёма и без добавок
+  const COFFEE = ['mg-syrup'];
+  // NONE — без модификаторов (чаи, какао)
+  const NONE: string[] = [];
+
   const products: Array<{
     id: string; categoryId: string; name: string; basePrice: number; emoji: string;
-    modifierGroupIds: string[]; sortOrder: number;
+    mods: string[];
   }> = [
-    { id: 'p-esp', categoryId: 'c1', name: 'Эспрессо', basePrice: 130, emoji: '☕', modifierGroupIds: [], sortOrder: 1 },
-    { id: 'p-dbl', categoryId: 'c1', name: 'Доппио', basePrice: 170, emoji: '☕', modifierGroupIds: [], sortOrder: 2 },
-    { id: 'p-amr', categoryId: 'c1', name: 'Американо', basePrice: 160, emoji: '☕', modifierGroupIds: ['mg-size'], sortOrder: 3 },
-    { id: 'p-mac', categoryId: 'c1', name: 'Макиато', basePrice: 190, emoji: '🥃', modifierGroupIds: ['mg-milk'], sortOrder: 4 },
-    { id: 'p-cap', categoryId: 'c2', name: 'Капучино', basePrice: 220, emoji: '☕', modifierGroupIds: ['mg-size', 'mg-milk', 'mg-syrup'], sortOrder: 1 },
-    { id: 'p-lat', categoryId: 'c2', name: 'Латте', basePrice: 240, emoji: '🥛', modifierGroupIds: ['mg-size', 'mg-milk', 'mg-syrup'], sortOrder: 2 },
-    { id: 'p-flt', categoryId: 'c2', name: 'Флэт уайт', basePrice: 240, emoji: '☕', modifierGroupIds: ['mg-milk', 'mg-syrup'], sortOrder: 3 },
-    { id: 'p-raf', categoryId: 'c2', name: 'Раф', basePrice: 260, emoji: '🍯', modifierGroupIds: ['mg-size', 'mg-milk', 'mg-syrup'], sortOrder: 4 },
-    { id: 'p-moc', categoryId: 'c2', name: 'Моккачино', basePrice: 280, emoji: '🍫', modifierGroupIds: ['mg-size', 'mg-milk'], sortOrder: 5 },
-    { id: 'p-hchoc', categoryId: 'c2', name: 'Горячий шоколад', basePrice: 260, emoji: '🍫', modifierGroupIds: ['mg-size', 'mg-milk'], sortOrder: 6 },
-    { id: 'p-tblk', categoryId: 'c3', name: 'Чёрный чай', basePrice: 150, emoji: '🍵', modifierGroupIds: ['mg-size'], sortOrder: 1 },
-    { id: 'p-tgrn', categoryId: 'c3', name: 'Зелёный чай', basePrice: 150, emoji: '🍵', modifierGroupIds: ['mg-size'], sortOrder: 2 },
-    { id: 'p-tmts', categoryId: 'c3', name: 'Матча-латте', basePrice: 280, emoji: '🍵', modifierGroupIds: ['mg-size', 'mg-milk', 'mg-syrup'], sortOrder: 3 },
-    { id: 'p-lav', categoryId: 'c4', name: 'Лавандовый раф', basePrice: 290, emoji: '💜', modifierGroupIds: ['mg-size', 'mg-milk'], sortOrder: 1 },
-    { id: 'p-orng', categoryId: 'c4', name: 'Orange-эспрессо', basePrice: 240, emoji: '🍊', modifierGroupIds: [], sortOrder: 2 },
-    { id: 'p-bnb', categoryId: 'c4', name: 'Банан-миндаль', basePrice: 310, emoji: '🍌', modifierGroupIds: ['mg-size', 'mg-milk'], sortOrder: 3 },
-    { id: 'p-crs', categoryId: 'c5', name: 'Круассан', basePrice: 180, emoji: '🥐', modifierGroupIds: [], sortOrder: 1 },
-    { id: 'p-che', categoryId: 'c5', name: 'Чизкейк', basePrice: 260, emoji: '🍰', modifierGroupIds: [], sortOrder: 2 },
-    { id: 'p-cok', categoryId: 'c5', name: 'Овсяное печенье', basePrice: 90, emoji: '🍪', modifierGroupIds: [], sortOrder: 3 },
+    // Молочные (base = M price)
+    { id: 'p-tai', categoryId: 'c-milk', name: 'Тайское караоке', basePrice: 300, emoji: '🥛', mods: BUBBLE },
+    { id: 'p-oreo', categoryId: 'c-milk', name: 'Орео', basePrice: 330, emoji: '🍪', mods: BUBBLE },
+    { id: 'p-nut', categoryId: 'c-milk', name: 'Нутелла', basePrice: 330, emoji: '🍫', mods: BUBBLE },
+    { id: 'p-mblue', categoryId: 'c-milk', name: 'Молочная черника', basePrice: 320, emoji: '🫐', mods: BUBBLE },
+    { id: 'p-gran', categoryId: 'c-milk', name: 'Гранат-кокос', basePrice: 330, emoji: '🥥', mods: BUBBLE },
+    { id: 'p-chstr', categoryId: 'c-milk', name: 'Чоко-клубника', basePrice: 330, emoji: '🍓', mods: BUBBLE },
+
+    // Таро
+    { id: 'p-moon', categoryId: 'c-taro', name: 'Тень луны', basePrice: 330, emoji: '🌙', mods: BUBBLE },
+    { id: 'p-milkti', categoryId: 'c-taro', name: 'Бабл милк-ти', basePrice: 280, emoji: '🧋', mods: BUBBLE },
+
+    // Послаще
+    { id: 'p-jstr', categoryId: 'c-sweet', name: 'Жасминовая клубника', basePrice: 310, emoji: '🍓', mods: BUBBLE },
+    { id: 'p-jrasp', categoryId: 'c-sweet', name: 'Жасминовая малина', basePrice: 310, emoji: '🍇', mods: BUBBLE },
+    { id: 'p-frblue', categoryId: 'c-sweet', name: 'Морозная черника', basePrice: 310, emoji: '🫐', mods: BUBBLE },
+    { id: 'p-rcloud', categoryId: 'c-sweet', name: 'Малиновое облако', basePrice: 320, emoji: '☁️', mods: BUBBLE },
+    { id: 'p-redcur', categoryId: 'c-sweet', name: 'Красный со смородиной', basePrice: 310, emoji: '🔴', mods: BUBBLE },
+    { id: 'p-citrus', categoryId: 'c-sweet', name: 'Цитрус', basePrice: 300, emoji: '🍊', mods: BUBBLE },
+
+    // Покислее
+    { id: 'p-marak', categoryId: 'c-sour', name: 'Маракуйя с содовой', basePrice: 310, emoji: '🥭', mods: BUBBLE },
+    { id: 'p-rdrag', categoryId: 'c-sour', name: 'Рэд драгон', basePrice: 310, emoji: '🐉', mods: BUBBLE },
+    { id: 'p-jlim', categoryId: 'c-sour', name: 'Жасминовый лайм', basePrice: 310, emoji: '🍋', mods: BUBBLE },
+    { id: 'p-tlun', categoryId: 'c-sour', name: 'Тай лун', basePrice: 310, emoji: '🐲', mods: BUBBLE },
+
+    // С кислинкой
+    { id: 'p-oblep', categoryId: 'c-tart', name: 'Облепиховая пряность', basePrice: 300, emoji: '🌾', mods: BUBBLE },
+    { id: 'p-velv', categoryId: 'c-tart', name: 'Вельвет', basePrice: 310, emoji: '❤️', mods: BUBBLE },
+    { id: 'p-lmors', categoryId: 'c-tart', name: 'Лесной морс', basePrice: 310, emoji: '🌲', mods: BUBBLE },
+    { id: 'p-berry', categoryId: 'c-tart', name: 'Ягодный микс', basePrice: 310, emoji: '🍒', mods: BUBBLE },
+    { id: 'p-jkiwi', categoryId: 'c-tart', name: 'Жасминовый киви', basePrice: 320, emoji: '🥝', mods: BUBBLE },
+    { id: 'p-taior', categoryId: 'c-tart', name: 'Тайский с апельсином', basePrice: 320, emoji: '🍊', mods: BUBBLE },
+
+    // Бабл-Матча
+    { id: 'p-mtchrasp', categoryId: 'c-matcha', name: 'Матча с малиной', basePrice: 330, emoji: '🍵', mods: BUBBLE },
+    { id: 'p-mtchfis', categoryId: 'c-matcha', name: 'Матча с фисташкой', basePrice: 330, emoji: '🌰', mods: BUBBLE },
+    { id: 'p-mtchjstr', categoryId: 'c-matcha', name: 'Жасминовая клубника', basePrice: 310, emoji: '🍓', mods: BUBBLE },
+    { id: 'p-mtchsak', categoryId: 'c-matcha', name: 'Розовая сакура', basePrice: 330, emoji: '🌸', mods: BUBBLE },
+
+    // Бабл-лим
+    { id: 'p-lmoh', categoryId: 'c-lim', name: 'Мохито', basePrice: 300, emoji: '🌿', mods: BUBBLE },
+    { id: 'p-lshav', categoryId: 'c-lim', name: 'Щавелевый', basePrice: 300, emoji: '🌱', mods: BUBBLE },
+    { id: 'p-limbr', categoryId: 'c-lim', name: 'Изумрудный бриз', basePrice: 300, emoji: '💚', mods: BUBBLE },
+    { id: 'p-lcarr', categoryId: 'c-lim', name: 'Карамельная малина', basePrice: 300, emoji: '🍬', mods: BUBBLE },
+    { id: 'p-lraisz', categoryId: 'c-lim', name: 'Райсзан', basePrice: 300, emoji: '✨', mods: BUBBLE },
+    { id: 'p-lban', categoryId: 'c-lim', name: 'Банановый', basePrice: 300, emoji: '🍌', mods: BUBBLE },
+
+    // Бабл-кофе — только M, добавки+сироп можно
+    { id: 'p-bkchob', categoryId: 'c-babl-coffee', name: 'Чоко-банан', basePrice: 380, emoji: '🍫', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkbcar', categoryId: 'c-babl-coffee', name: 'Взрывная карамель', basePrice: 380, emoji: '💥', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkrose', categoryId: 'c-babl-coffee', name: 'Красотка в розовом', basePrice: 380, emoji: '🌹', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bktof', categoryId: 'c-babl-coffee', name: 'Тоффи бум', basePrice: 380, emoji: '🍮', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bksn', categoryId: 'c-babl-coffee', name: 'Сникерс', basePrice: 380, emoji: '🥜', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkstb', categoryId: 'c-babl-coffee', name: 'Клубника-базилик', basePrice: 380, emoji: '🌿', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkchz', categoryId: 'c-babl-coffee', name: 'Чизкейк', basePrice: 380, emoji: '🍰', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkhal', categoryId: 'c-babl-coffee', name: 'Халва', basePrice: 380, emoji: '🍯', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkrf', categoryId: 'c-babl-coffee', name: 'Рот фронт', basePrice: 380, emoji: '🍬', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkcrf', categoryId: 'c-babl-coffee', name: 'Сырный раф', basePrice: 380, emoji: '🧀', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkbmb', categoryId: 'c-babl-coffee', name: 'Бамбл', basePrice: 380, emoji: '🐝', mods: ['mg-syrup', 'mg-extras'] },
+    { id: 'p-bkdub', categoryId: 'c-babl-coffee', name: 'Дубайский', basePrice: 380, emoji: '🕌', mods: ['mg-syrup', 'mg-extras'] },
+
+    // Чаи (без модификаторов, но с примечанием об объёме в названии)
+    { id: 'p-tass', categoryId: 'c-tea', name: 'Ассам 380 мл', basePrice: 120, emoji: '🍵', mods: NONE },
+    { id: 'p-tkar', categoryId: 'c-tea', name: 'Каркадэ 380 мл', basePrice: 135, emoji: '🌺', mods: NONE },
+    { id: 'p-tglw', categoryId: 'c-tea', name: 'Глинтвейн 380 мл', basePrice: 180, emoji: '🍷', mods: NONE },
+    { id: 'p-tpea', categoryId: 'c-tea', name: 'Персиковый Липтон 380 мл', basePrice: 125, emoji: '🍑', mods: NONE },
+    { id: 'p-tobl', categoryId: 'c-tea', name: 'Облепиховый 380 мл', basePrice: 115, emoji: '🌾', mods: NONE },
+
+    // Кофе — сироп, без объёма
+    { id: 'p-amer', categoryId: 'c-coffee', name: 'Американо 250 мл', basePrice: 150, emoji: '☕', mods: COFFEE },
+    { id: 'p-lat', categoryId: 'c-coffee', name: 'Латте 380 мл', basePrice: 200, emoji: '☕', mods: COFFEE },
+    { id: 'p-cap', categoryId: 'c-coffee', name: 'Капучино 380 мл', basePrice: 190, emoji: '☕', mods: COFFEE },
+    { id: 'p-raf', categoryId: 'c-coffee', name: 'Раф 380 мл', basePrice: 230, emoji: '🍯', mods: COFFEE },
+    { id: 'p-brraf', categoryId: 'c-coffee', name: 'Банановый раф 380 мл', basePrice: 275, emoji: '🍌', mods: COFFEE },
+    { id: 'p-flat', categoryId: 'c-coffee', name: 'Флэт уайт 250 мл', basePrice: 200, emoji: '🥛', mods: COFFEE },
+    { id: 'p-moc', categoryId: 'c-coffee', name: 'Моккачино 380 мл', basePrice: 215, emoji: '🍫', mods: COFFEE },
+
+    // Какао
+    { id: 'p-ccl', categoryId: 'c-cacao', name: 'Классика 380 мл', basePrice: 160, emoji: '🍫', mods: NONE },
+    { id: 'p-cbur', categoryId: 'c-cacao', name: 'Буренка 380 мл', basePrice: 210, emoji: '🐄', mods: NONE },
+    { id: 'p-ccar', categoryId: 'c-cacao', name: 'Карамель 380 мл', basePrice: 210, emoji: '🍮', mods: NONE },
+    { id: 'p-cshok', categoryId: 'c-cacao', name: 'Шоколад 380 мл', basePrice: 215, emoji: '🍫', mods: NONE },
   ];
+
+  let sortOrder = 0;
   for (const p of products) {
-    await prisma.product.upsert({
-      where: { id: p.id },
-      create: {
+    sortOrder += 1;
+    await prisma.product.create({
+      data: {
         id: p.id,
         categoryId: p.categoryId,
         name: p.name,
         basePrice: p.basePrice,
         emoji: p.emoji,
-        modifierGroupIds: JSON.stringify(p.modifierGroupIds),
-        sortOrder: p.sortOrder,
+        modifierGroupIds: JSON.stringify(p.mods),
+        sortOrder,
         isActive: true,
-      },
-      update: {
-        name: p.name,
-        basePrice: p.basePrice,
-        emoji: p.emoji,
-        modifierGroupIds: JSON.stringify(p.modifierGroupIds),
       },
     });
   }
 
-  // Brand settings
+  // === Brand settings (upsert, не трогаем если уже настроено) ===
   const settings = [
     { key: 'brand.name', value: 'TAGIT Coffee' },
     { key: 'brand.logoEmoji', value: '☕' },
@@ -156,7 +232,7 @@ async function main() {
     await prisma.setting.upsert({
       where: { key: s.key },
       create: s,
-      update: { value: s.value },
+      update: {}, // если уже есть — не перезаписываем (владелец мог настроить)
     });
   }
 
@@ -164,7 +240,8 @@ async function main() {
   console.log('   Employees:', employees.length);
   console.log('   Categories:', categories.length);
   console.log('   Products:', products.length);
-  console.log('   Demo PINs — Владелец 1234, Аня 5678, Максим 2222');
+  console.log('   Modifier groups:', modifierGroups.length);
+  console.log('   Демо PIN — Владелец 1234, Аня 5678, Максим 2222');
 }
 
 main()

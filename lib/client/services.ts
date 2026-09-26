@@ -39,8 +39,13 @@ export async function listShifts() {
 export async function getShift(id: string) {
   return api<{ shift: Shift & { orders: Order[]; cashMovements: CashMovement[] }; stats: ShiftStats }>(`/shifts/${id}`);
 }
+export async function deleteShift(id: string) {
+  return api<{ ok: boolean }>(`/shifts/${id}`, { method: 'DELETE' });
+}
 
-export interface OrderPayloadItem { productId: string; qty: number; mods: CartLineMod[]; discount: number }
+export type OrderPayloadItem =
+  | { productId: string; qty: number; mods: CartLineMod[]; discount: number }
+  | { customName: string; customPrice: number; qty: number; mods: CartLineMod[]; discount: number };
 export async function createOrder(payload: {
   items: OrderPayloadItem[];
   paymentMethod: PaymentMethod;

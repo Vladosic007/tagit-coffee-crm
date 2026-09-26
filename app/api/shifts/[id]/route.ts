@@ -33,4 +33,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   });
 }
 
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const check = await requireRole(req, 'owner');
+  if (check instanceof NextResponse) return check;
+  const id = params.id;
+  const shift = await prisma.shift.findUnique({ where: { id } });
+  if (!shift) return NextResponse.json({ error: 'Смена не найдена' }, { status: 404 });
+  // Каскад руками: order_items → orders → cash_movements → shift.
+  await prisma.$transaction([
+    prisma.orderItem.deleteMany({ where: { order: { shiftId: id } } }),
+    prisma.order.deleteMany({ where: { shiftId: id } }),
+    prisma.cashMovement.deleteMany({ where: { shiftId: id } }),
+    prisma.shift.delete({ where: { id } }),
+  ]);
+  return NextResponse.json({ ok: true });
+}
+
 export const dynamic = 'force-dynamic';

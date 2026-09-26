@@ -1,22 +1,42 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Trash2 } from 'lucide-react';
 import { useStore } from '@/stores/useStore';
 import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
 import { moneyPlain, fmtDateTime, fmtTime } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { deleteShift } from '@/lib/client/services';
 
 export default function ShiftJournal() {
   const shifts = useStore((s) => [...s.shifts].sort((a, b) => (a.openedAt < b.openedAt ? 1 : -1)));
   const orders = useStore((s) => s.orders);
   const cms = useStore((s) => s.cashMovements);
   const shiftStats = useStore((s) => s.shiftStats);
+  const refreshShifts = useStore((s) => s.refreshShifts);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const openShift = openId ? shifts.find((s) => s.id === openId) : null;
   const openOrders = openShift ? orders.filter((o) => o.shiftId === openShift.id) : [];
   const openCms = openShift ? cms.filter((c) => c.shiftId === openShift.id) : [];
   const stats = openShift ? shiftStats(openShift.id) : null;
+  const toDelete = confirmDelete ? shifts.find((s) => s.id === confirmDelete) : null;
+
+  async function doDelete(id: string) {
+    setBusy(true);
+    try {
+      await deleteShift(id);
+      await refreshShifts();
+      setConfirmDelete(null);
+      setOpenId(null);
+    } catch (e) {
+      alert(`Ошибка: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const totalRevenue = useMemo(
     () => shifts.reduce((s, sh) => s + shiftStats(sh.id).revenueTotal, 0),
@@ -36,7 +56,7 @@ export default function ShiftJournal() {
           <div className="bg-white rounded-2xl p-10 text-center text-muted">Пока нет смен</div>
         ) : (
           <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-            <div className="grid grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,1fr,40px] gap-3 px-5 py-3 text-xs uppercase tracking-wide text-muted border-b border-line font-semibold">
+            <div className="grid grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,1fr,80px] gap-3 px-5 py-3 text-xs uppercase tracking-wide text-muted border-b border-line font-semibold">
               <div>Открыта</div>
               <div>Закрыта</div>
               <div>Бариста</div>
@@ -50,12 +70,16 @@ export default function ShiftJournal() {
               const diff =
                 sh.cashCounted != null ? sh.cashCounted - s.expectedCash : null;
               return (
-                <button
+                <div
                   key={sh.id}
-                  onClick={() => setOpenId(sh.id)}
-                  className="w-full text-left grid grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,1fr,40px] gap-3 px-5 py-4 items-center border-b border-line last:border-b-0 hover:bg-cream/60"
+                  className="grid grid-cols-[1.2fr,1.2fr,1fr,1fr,1fr,1fr,80px] gap-3 px-5 py-4 items-center border-b border-line last:border-b-0 hover:bg-cream/60"
                 >
-                  <div className="font-semibold text-ink">{fmtDateTime(sh.openedAt)}</div>
+                  <button
+                    onClick={() => setOpenId(sh.id)}
+                    className="text-left font-semibold text-ink"
+                  >
+                    {fmtDateTime(sh.openedAt)}
+                  </button>
                   <div className="text-muted">{sh.closedAt ? fmtDateTime(sh.closedAt) : '—'}</div>
                   <div>{sh.openedByName}</div>
                   <div className="tabular-nums">{s.checks}</div>
@@ -74,8 +98,24 @@ export default function ShiftJournal() {
                   >
                     {diff == null ? '—' : diff === 0 ? '0 ₽' : `${diff > 0 ? '+' : ''}${moneyPlain(diff)}`}
                   </div>
-                  <ArrowRight size={18} className="text-muted" />
-                </button>
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => setOpenId(sh.id)}
+                      className="w-9 h-9 rounded-lg hover:bg-cream flex items-center justify-center"
+                      aria-label="Открыть"
+                    >
+                      <ArrowRight size={18} className="text-muted" />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(sh.id)}
+                      className="w-9 h-9 rounded-lg hover:bg-error/10 hover:text-error text-muted flex items-center justify-center"
+                      aria-label="Удалить"
+                      title="Удалить смену (для тестирования)"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -153,6 +193,36 @@ export default function ShiftJournal() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={!!toDelete}
+        onClose={() => (busy ? null : setConfirmDelete(null))}
+        title="Удалить смену?"
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <Button block variant="secondary" disabled={busy} onClick={() => setConfirmDelete(null)}>
+              Отмена
+            </Button>
+            <Button
+              block
+              variant="danger"
+              loading={busy}
+              disabled={busy || !toDelete}
+              onClick={() => toDelete && doDelete(toDelete.id)}
+            >
+              Удалить навсегда
+            </Button>
+          </div>
+        }
+      >
+        <div className="text-ink">
+          Смена от {toDelete && fmtDateTime(toDelete.openedAt)} будет удалена вместе со всеми продажами, чеками и движениями наличных.
+        </div>
+        <div className="mt-3 text-sm text-error">
+          Это действие нельзя отменить. Используйте только на этапе тестирования.
+        </div>
       </Modal>
     </div>
   );

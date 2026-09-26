@@ -13,11 +13,16 @@ const ModSchema = z.object({
 });
 
 const ItemSchema = z.object({
-  productId: z.string(),
+  productId: z.string().optional(),         // либо productId из БД
+  customName: z.string().min(1).optional(), // либо свободная позиция
+  customPrice: z.number().int().min(0).optional(),
   qty: z.number().int().min(1),
   mods: z.array(ModSchema).default([]),
   discount: z.number().int().min(0).max(100).default(0),
-});
+}).refine(
+  (i) => (i.productId != null) !== (i.customName != null && i.customPrice != null),
+  { message: 'Нужен либо productId, либо customName + customPrice' }
+);
 
 const CreateOrderBody = z.object({
   items: z.array(ItemSchema).min(1),
@@ -36,32 +41,46 @@ export async function POST(req: NextRequest) {
   const shift = await prisma.shift.findFirst({ where: { status: 'open' } });
   if (!shift) return NextResponse.json({ error: 'Нет открытой смены' }, { status: 409 });
 
-  const productIds = body.items.map((i) => i.productId);
+  const productIds = body.items.filter((i) => i.productId).map((i) => i.productId!);
   const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
   const byId = new Map(products.map((p) => [p.id, p]));
 
   const items: Array<{
-    productId: string; productName: string; unitPrice: number; qty: number;
+    productId: string | null; productName: string; unitPrice: number; qty: number;
     modifiers: string; discount: number; lineTotal: number;
   }> = [];
   let total = 0;
   for (const it of body.items) {
-    const p = byId.get(it.productId);
-    if (!p || !p.isActive)
-      return NextResponse.json({ error: `Позиция ${it.productId} не найдена или в стоп-листе` }, { status: 400 });
-    const modDelta = it.mods.reduce((s, m) => s + m.priceDelta, 0);
-    const unitPrice = p.basePrice + modDelta;
+    let productId: string | null;
+    let productName: string;
+    let baseUnit: number;
+    let mods = it.mods;
+    if (it.productId) {
+      const p = byId.get(it.productId);
+      if (!p || !p.isActive)
+        return NextResponse.json({ error: `Позиция ${it.productId} не найдена или в стоп-листе` }, { status: 400 });
+      productId = p.id;
+      productName = p.name;
+      baseUnit = p.basePrice;
+    } else {
+      productId = null;
+      productName = it.customName!;
+      baseUnit = it.customPrice!;
+      mods = [];
+    }
+    const modDelta = mods.reduce((s, m) => s + m.priceDelta, 0);
+    const unitPrice = baseUnit + modDelta;
     const discount = Math.min(100, Math.max(0, Math.round(it.discount)));
     const discountedUnit = Math.round((unitPrice * (100 - discount)) / 100);
     const lineTotal = discountedUnit * it.qty;
     total += lineTotal;
     items.push({
-      productId: p.id,
-      productName: p.name,
+      productId,
+      productName,
       unitPrice,
       qty: it.qty,
       modifiers: JSON.stringify(
-        it.mods.map((m) => ({ groupName: m.groupName, optionName: m.optionName, priceDelta: m.priceDelta }))
+        mods.map((m) => ({ groupName: m.groupName, optionName: m.optionName, priceDelta: m.priceDelta }))
       ),
       discount,
       lineTotal,

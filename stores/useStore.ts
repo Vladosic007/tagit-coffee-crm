@@ -337,12 +337,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   createOrder: async (paymentMethod, cashReceived) => {
-    const items = get().cart.map((l) => ({
-      productId: l.productId,
-      qty: l.qty,
-      mods: l.mods,
-      discount: l.discount,
-    }));
+    const items = get().cart.map((l) =>
+      l.productId
+        ? { productId: l.productId, qty: l.qty, mods: l.mods, discount: l.discount }
+        : {
+            customName: l.productName,
+            customPrice: l.unitPrice,
+            qty: l.qty,
+            mods: [] as typeof l.mods,
+            discount: l.discount,
+          }
+    );
     if (items.length === 0) return null;
     const r = await api.createOrder({ items, paymentMethod, cashReceived });
     const order = normalizeOrder(r.order as unknown as Order & { items: Array<{ modifiers?: unknown; mods?: unknown }> });
@@ -404,6 +409,23 @@ function normalizeOrder(o: Order & { items: Array<{ modifiers?: unknown; mods?: 
 function recalcLine(l: CartLine): CartLine {
   const discountedUnit = Math.round((l.unitPrice * (100 - l.discount)) / 100);
   return { ...l, discountedUnit, lineTotal: discountedUnit * l.qty };
+}
+
+export function buildCustomLine(name: string, price: number, qty: number): Omit<CartLine, 'lineId'> {
+  const d = 0;
+  const discountedUnit = price;
+  return {
+    productId: null,
+    productName: name.trim(),
+    basePrice: price,
+    qty,
+    mods: [],
+    unitPrice: price,
+    discount: d,
+    discountedUnit,
+    lineTotal: discountedUnit * qty,
+    isCustom: true,
+  };
 }
 
 export function buildCartLine(
